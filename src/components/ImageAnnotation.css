@@ -75,12 +75,13 @@
 .image-container {
   flex: 1;
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   background: #e0e0e0;
   border: 2px solid #ccc;
   border-radius: 8px;
   cursor: crosshair;
   min-height: 400px;
+  max-height: 600px;
 }
 
 .annotation-image {

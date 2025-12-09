@@ -34,15 +34,18 @@ const ImageAnnotation: React.FC<ImageAnnotationProps> = ({
       if (!containerRef.current || !imageRef.current) return null;
 
       const containerRect = containerRef.current.getBoundingClientRect();
-      const imageRect = imageRef.current.getBoundingClientRect();
 
-      // Calculate position relative to the container
-      const x = (clientX - containerRect.left - panOffset.x) / scale;
-      const y = (clientY - containerRect.top - panOffset.y) / scale;
+      // Calculate position relative to container, accounting for scroll
+      const scrollLeft = containerRef.current.scrollLeft;
+      const scrollTop = containerRef.current.scrollTop;
 
-      // Adjust for image position within container
-      const imageX = x - (imageRect.left - containerRect.left) / scale;
-      const imageY = y - (imageRect.top - containerRect.top) / scale;
+      // Mouse position relative to container (including scroll)
+      const mouseX = clientX - containerRect.left + scrollLeft;
+      const mouseY = clientY - containerRect.top + scrollTop;
+
+      // Remove pan offset and un-scale to get original image coordinates
+      const imageX = (mouseX - panOffset.x) / scale;
+      const imageY = (mouseY - panOffset.y) / scale;
 
       return { x: imageX, y: imageY };
     },
@@ -135,10 +138,10 @@ const ImageAnnotation: React.FC<ImageAnnotationProps> = ({
             { x: x + w, y: y + h }, // Bottom-right
             { x: x, y: y + h }, // Bottom-left
           ];
-          console.log("P1 (Top-left):", corners[0]);
-          console.log("P2 (Top-right):", corners[1]);
-          console.log("P3 (Bottom-right):", corners[2]);
-          console.log("P4 (Bottom-left):", corners[3]);
+          console.log("Top-left:", corners[0]);
+          console.log("Top-right:", corners[1]);
+          console.log("Bottom-right:", corners[2]);
+          console.log("Bottom-left:", corners[3]);
           console.log("All corners:", JSON.stringify(corners));
         } else if (selectedShape === "CIRCLE") {
           const centerX = Math.round(x + w / 2);
@@ -156,10 +159,10 @@ const ImageAnnotation: React.FC<ImageAnnotationProps> = ({
             { x: x + w, y: y + h },
             { x: x, y: y + h },
           ];
-          console.log("P1 (Top-left):", corners[0]);
-          console.log("P2 (Top-right):", corners[1]);
-          console.log("P3 (Bottom-right):", corners[2]);
-          console.log("P4 (Bottom-left):", corners[3]);
+          console.log("Top-left:", corners[0]);
+          console.log("Top-right:", corners[1]);
+          console.log("Bottom-right:", corners[2]);
+          console.log("Bottom-left:", corners[3]);
           console.log("All corners:", JSON.stringify(corners));
         }
         console.log("========================");
@@ -484,11 +487,30 @@ const ImageAnnotation: React.FC<ImageAnnotationProps> = ({
                       <td>{index + 1}</td>
                       <td>{pos.shape}</td>
                       <td className="coordinates-cell">
-                        {cornerPoints.map((pt, i) => (
-                          <span key={i} className="coordinate-point">
-                            P{i + 1}: ({pt.x}, {pt.y})
-                          </span>
-                        ))}
+                        {cornerPoints.map((pt, i) => {
+                          // Get label based on shape and point index
+                          let label = "";
+                          if (
+                            pos.shape === "RECTANGLE" ||
+                            pos.shape === "TRAPEZOID"
+                          ) {
+                            const labels = [
+                              "Top-left",
+                              "Top-right",
+                              "Bottom-right",
+                              "Bottom-left",
+                            ];
+                            label = labels[i] || `P${i + 1}`;
+                          } else if (pos.shape === "CIRCLE") {
+                            const labels = ["Center", "Radius"];
+                            label = labels[i] || `P${i + 1}`;
+                          }
+                          return (
+                            <span key={i} className="coordinate-point">
+                              {label}: ({pt.x}, {pt.y})
+                            </span>
+                          );
+                        })}
                       </td>
                       <td>
                         <button
