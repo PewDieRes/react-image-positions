@@ -8,6 +8,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.j
 
 export type ShapeType = "RECTANGLE" | "CIRCLE" | "TRAPEZOID";
 export type ImageFormat = "PNG" | "JPEG";
+export type CoordinateOrigin = "TOP_LEFT" | "TOP_RIGHT" | "BOTTOM_LEFT" | "BOTTOM_RIGHT" | "CENTER";
 
 export interface Position {
   id: string;
@@ -16,6 +17,11 @@ export interface Position {
   width: number;
   height: number;
   shape: ShapeType;
+  // Overlay image properties
+  overlayImage?: string | null;
+  overlayFileName?: string | null;
+  showFileName?: boolean;
+  fileNamePositionId?: string | null; // ID of position where filename will be displayed
 }
 
 function App() {
@@ -25,6 +31,7 @@ function App() {
   const [showFormatModal, setShowFormatModal] = useState(false);
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [coordinateOrigin, setCoordinateOrigin] = useState<CoordinateOrigin>("TOP_LEFT");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const convertPdfToImage = async (file: File, format: ImageFormat): Promise<string> => {
@@ -107,11 +114,39 @@ function App() {
     // Regular image upload
     const reader = new FileReader();
     reader.onloadend = () => {
-      setImageUrl(reader.result as string);
-      setPositions([]);
-      setImageDimensions(null); // Will be determined by the image itself
+      const dataUrl = reader.result as string;
+      // Get image dimensions
+      const img = new Image();
+      img.onload = () => {
+        setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+        setImageUrl(dataUrl);
+        setPositions([]);
+      };
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
+  };
+
+  // Transform coordinate based on selected origin
+  const transformCoordinate = (x: number, y: number): { x: number; y: number } => {
+    if (!imageDimensions) return { x, y };
+    
+    const { width: imgW, height: imgH } = imageDimensions;
+    
+    switch (coordinateOrigin) {
+      case "TOP_LEFT":
+        return { x, y };
+      case "TOP_RIGHT":
+        return { x: imgW - x, y };
+      case "BOTTOM_LEFT":
+        return { x, y: imgH - y };
+      case "BOTTOM_RIGHT":
+        return { x: imgW - x, y: imgH - y };
+      case "CENTER":
+        return { x: x - imgW / 2, y: y - imgH / 2 };
+      default:
+        return { x, y };
+    }
   };
 
   const handlePositionsChange = (newPositions: Position[]) => {
@@ -124,40 +159,37 @@ function App() {
       return;
     }
 
-    // Format coordinates in database format: array of points + shape
+    // Format coordinates in database format with selected origin transformation
     const databaseFormat = positions.map((pos) => {
       let coordinates: Array<{ x: number; y: number }> = [];
 
       if (pos.shape === "RECTANGLE") {
-        // For rectangle: all 4 corner points (top-left, top-right, bottom-right, bottom-left)
+        // For rectangle: Top-left and Bottom-right (transformed)
+        const tl = transformCoordinate(pos.x, pos.y);
+        const br = transformCoordinate(pos.x + pos.width, pos.y + pos.height);
         coordinates = [
-          { x: Math.round(pos.x), y: Math.round(pos.y) }, // Top-left
-          { x: Math.round(pos.x + pos.width), y: Math.round(pos.y) }, // Top-right
-          { x: Math.round(pos.x + pos.width), y: Math.round(pos.y + pos.height) }, // Bottom-right
-          { x: Math.round(pos.x), y: Math.round(pos.y + pos.height) }, // Bottom-left
+          { x: Math.round(tl.x), y: Math.round(tl.y) },
+          { x: Math.round(br.x), y: Math.round(br.y) },
         ];
       } else if (pos.shape === "CIRCLE") {
-        // For circle: center point and radius point
-        const centerX = Math.round(pos.x + pos.width / 2);
-        const centerY = Math.round(pos.y + pos.height / 2);
+        // For circle: center point (transformed) and radius
+        const rawCenterX = pos.x + pos.width / 2;
+        const rawCenterY = pos.y + pos.height / 2;
+        const center = transformCoordinate(rawCenterX, rawCenterY);
         const radius = Math.round(Math.max(pos.width, pos.height) / 2);
         coordinates = [
-          { x: centerX, y: centerY },
-          { x: centerX + radius, y: centerY },
+          { x: Math.round(center.x), y: Math.round(center.y) },
+          { x: radius, y: 0 }, // Radius as separate value
         ];
       } else if (pos.shape === "TRAPEZOID") {
-        // For trapezoid: 4 corner points (top-left, top-right, bottom-right, bottom-left)
-        // Top edge is 80% of bottom edge width
+        // For trapezoid: Top-left and Bottom-right (transformed)
         const topWidth = pos.width * 0.8;
         const topOffset = (pos.width - topWidth) / 2;
+        const tl = transformCoordinate(pos.x + topOffset, pos.y);
+        const br = transformCoordinate(pos.x + pos.width, pos.y + pos.height);
         coordinates = [
-          { x: Math.round(pos.x + topOffset), y: Math.round(pos.y) }, // Top-left
-          { x: Math.round(pos.x + topOffset + topWidth), y: Math.round(pos.y) }, // Top-right
-          {
-            x: Math.round(pos.x + pos.width),
-            y: Math.round(pos.y + pos.height),
-          }, // Bottom-right
-          { x: Math.round(pos.x), y: Math.round(pos.y + pos.height) }, // Bottom-left
+          { x: Math.round(tl.x), y: Math.round(tl.y) },
+          { x: Math.round(br.x), y: Math.round(br.y) },
         ];
       }
 
@@ -171,6 +203,9 @@ function App() {
     const formattedData = JSON.stringify(databaseFormat, null, 2);
 
     // Display in console
+    console.log("=== SAVE POSITIONS ===");
+    console.log("Coordinate Origin:", coordinateOrigin);
+    console.log("Image Dimensions:", imageDimensions);
     console.log("Database Format (Coordinates | Shape):");
     databaseFormat.forEach((item, index) => {
       console.log(
@@ -178,6 +213,7 @@ function App() {
       );
     });
     console.log("\nFull JSON:", formattedData);
+    console.log("======================");
 
     // Display in alert (formatted nicely)
     const alertMessage = `Database Format:\n\n${databaseFormat
@@ -253,6 +289,8 @@ function App() {
           imageUrl={imageUrl}
           positions={positions}
           onPositionsChange={handlePositionsChange}
+          coordinateOrigin={coordinateOrigin}
+          onCoordinateOriginChange={setCoordinateOrigin}
         />
       ) : (
         <div className="empty-state">
